@@ -1,4 +1,4 @@
-# 26 Citation And Attribution
+# Citation And Attribution
 
 This page explains how we hope people cite and acknowledge AutoFigure-Edit.
 
@@ -93,6 +93,6 @@ In particular:
 
 ## Related files
 
-- [../../CITATION.cff](../../CITATION.cff)
-- [../../TRADEMARK.md](../../TRADEMARK.md)
-- [../../README.md](../../README.md)
+- [CITATION.cff](./CITATION.cff)
+- [TRADEMARK.md](./TRADEMARK.md)
+- [README.md](./README.md)
