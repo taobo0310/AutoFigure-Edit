@@ -3,7 +3,7 @@ Paper Method 到 SVG 图标替换完整流程 (Label 模式增强版 + Box合并
 
 支持的 API Provider：
 - openrouter: OpenRouter API (https://openrouter.ai/api/v1)
-- bianxie: Bianxie API (https://api.bianxie.ai/v1) - 使用 OpenAI SDK
+- custom: OpenAI 兼容 API（需要提供 --base_url 或 AUTOFIGURE_CUSTOM_BASE_URL）
 - gemini: Google Gemini 官方 API (https://ai.google.dev/)
 - openai: OpenAI Images API（仅步骤一生图 override）
 - openai_response: OpenAI Responses API（文本/多模态 SVG 重建）
@@ -39,8 +39,8 @@ Box合并功能 (--merge_threshold):
 5. 根据序号匹配，将透明图标替换到 SVG 占位符中 -> final.svg
 
 使用方法：
-    # 使用 Bianxie + label 模式（默认）
-    python iou_autofigure.py --method_file paper_method.txt --output_dir ./output --api_key "your-key"
+    # 使用自定义 OpenAI 兼容接口 + label 模式
+    python iou_autofigure.py --method_file paper_method.txt --output_dir ./output --provider custom --base_url "https://your-provider.example/v1" --api_key "your-key"
 
     # 使用 OpenRouter
     python iou_autofigure.py --method_file paper_method.txt --output_dir ./output --api_key "sk-or-v1-xxx" --provider openrouter
@@ -93,6 +93,48 @@ from transformers import AutoModelForImageSegmentation
 # Provider 配置
 # ============================================================================
 
+PUBLIC_PROVIDER_CHOICES = ("openrouter", "custom", "gemini", "openai_response")
+PUBLIC_IMAGE_PROVIDER_CHOICES = ("openrouter", "custom", "gemini", "openai")
+LEGACY_PROVIDER_ALIASES = {"bianxie": "custom"}
+
+
+def _custom_base_url_default() -> Optional[str]:
+    value = os.environ.get("AUTOFIGURE_CUSTOM_BASE_URL")
+    return value.strip() if value and value.strip() else None
+
+
+def _normalize_provider_name(value: str, *, image: bool = False, warn: bool = False) -> str:
+    if value in LEGACY_PROVIDER_ALIASES:
+        normalized = LEGACY_PROVIDER_ALIASES[value]
+        if warn:
+            print(
+                f"[compat] provider `{value}` is deprecated; using `{normalized}`. "
+                "Set --provider custom and --base_url explicitly.",
+                file=sys.stderr,
+            )
+        return normalized
+
+    choices = PUBLIC_IMAGE_PROVIDER_CHOICES if image else PUBLIC_PROVIDER_CHOICES
+    if value not in choices:
+        expected = " | ".join(choices)
+        raise ValueError(f"Unsupported {'image ' if image else ''}provider `{value}`. Expected: {expected}")
+    return value
+
+
+def _argparse_provider(value: str) -> str:
+    try:
+        return _normalize_provider_name(value, warn=True)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def _argparse_image_provider(value: str) -> str:
+    try:
+        return _normalize_provider_name(value, image=True, warn=True)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
 PROVIDER_CONFIGS = {
     "openrouter": {
         "base_url": "https://openrouter.ai/api/v1",
@@ -100,12 +142,7 @@ PROVIDER_CONFIGS = {
         "default_svg_model": "google/gemini-3.1-pro-preview",
     },
     "custom": {
-        "base_url": "https://api.bianxie.ai/v1",
-        "default_image_model": "gemini-3.1-flash-image-preview",
-        "default_svg_model": "gemini-3.1-pro-preview",
-    },
-    "bianxie": {
-        "base_url": "https://api.bianxie.ai/v1",
+        "base_url": _custom_base_url_default(),
         "default_image_model": "gemini-3.1-flash-image-preview",
         "default_svg_model": "gemini-3.1-pro-preview",
     },
@@ -129,8 +166,8 @@ IMAGE_PROVIDER_CONFIGS = {
     },
 }
 
-ProviderType = Literal["openrouter", "custom", "bianxie", "gemini", "openai_response"]
-ImageProviderType = Literal["openrouter", "custom", "bianxie", "gemini", "openai"]
+ProviderType = Literal["openrouter", "custom", "gemini", "openai_response"]
+ImageProviderType = Literal["openrouter", "custom", "gemini", "openai"]
 PlaceholderMode = Literal["none", "box", "label"]
 GEMINI_DEFAULT_IMAGE_SIZE = "4K"
 IMAGE_SIZE_CHOICES = ("1K", "2K", "4K")
@@ -181,8 +218,9 @@ def call_llm_text(
     Returns:
         LLM 响应文本
     """
-    if provider in ("bianxie", "custom"):
-        return _call_bianxie_text(prompt, api_key, model, base_url, max_tokens, temperature)
+    provider = _normalize_provider_name(provider)
+    if provider == "custom":
+        return _call_openai_compatible_text(prompt, api_key, model, base_url, max_tokens, temperature)
     if provider == "gemini":
         return _call_gemini_text(prompt, api_key, model, max_tokens, temperature)
     if provider == "openai_response":
@@ -214,8 +252,9 @@ def call_llm_multimodal(
     Returns:
         LLM 响应文本
     """
-    if provider in ("bianxie", "custom"):
-        return _call_bianxie_multimodal(contents, api_key, model, base_url, max_tokens, temperature)
+    provider = _normalize_provider_name(provider)
+    if provider == "custom":
+        return _call_openai_compatible_multimodal(contents, api_key, model, base_url, max_tokens, temperature)
     if provider == "gemini":
         return _call_gemini_multimodal(contents, api_key, model, max_tokens, temperature)
     if provider == "openai_response":
@@ -247,8 +286,9 @@ def call_llm_image_generation(
     Returns:
         生成的 PIL Image，失败返回 None
     """
-    if provider in ("bianxie", "custom"):
-        return _call_bianxie_image_generation(prompt, api_key, model, base_url, reference_image)
+    provider = _normalize_provider_name(provider, image=True)
+    if provider == "custom":
+        return _call_openai_compatible_image_generation(prompt, api_key, model, base_url, reference_image)
     if provider == "gemini":
         return _call_gemini_image_generation(
             prompt=prompt,
@@ -270,10 +310,10 @@ def call_llm_image_generation(
 
 
 # ============================================================================
-# Bianxie Provider 实现 (使用 OpenAI SDK)
+# Custom OpenAI-Compatible Provider 实现 (使用 OpenAI SDK)
 # ============================================================================
 
-def _call_bianxie_text(
+def _call_openai_compatible_text(
     prompt: str,
     api_key: str,
     model: str,
@@ -281,7 +321,7 @@ def _call_bianxie_text(
     max_tokens: int = 16000,
     temperature: float = 0.7,
 ) -> Optional[str]:
-    """使用 OpenAI SDK 调用 Bianxie 文本接口"""
+    """使用 OpenAI SDK 调用自定义 OpenAI 兼容文本接口"""
     try:
         from openai import OpenAI
 
@@ -296,11 +336,11 @@ def _call_bianxie_text(
 
         return completion.choices[0].message.content if completion and completion.choices else None
     except Exception as e:
-        print(f"[Bianxie] API 调用失败: {e}")
+        print(f"[Custom/OpenAI-compatible] API 调用失败: {e}")
         raise
 
 
-def _call_bianxie_multimodal(
+def _call_openai_compatible_multimodal(
     contents: List[Any],
     api_key: str,
     model: str,
@@ -308,7 +348,7 @@ def _call_bianxie_multimodal(
     max_tokens: int = 16000,
     temperature: float = 0.7,
 ) -> Optional[str]:
-    """使用 OpenAI SDK 调用 Bianxie 多模态接口"""
+    """使用 OpenAI SDK 调用自定义 OpenAI 兼容多模态接口"""
     try:
         from openai import OpenAI
 
@@ -336,18 +376,18 @@ def _call_bianxie_multimodal(
 
         return completion.choices[0].message.content if completion and completion.choices else None
     except Exception as e:
-        print(f"[Bianxie] 多模态 API 调用失败: {e}")
+        print(f"[Custom/OpenAI-compatible] 多模态 API 调用失败: {e}")
         raise
 
 
-def _call_bianxie_image_generation(
+def _call_openai_compatible_image_generation(
     prompt: str,
     api_key: str,
     model: str,
     base_url: str,
     reference_image: Optional[Image.Image] = None,
 ) -> Optional[Image.Image]:
-    """使用 OpenAI SDK 调用 Bianxie 图像生成接口"""
+    """使用 OpenAI SDK 调用自定义 OpenAI 兼容图像生成接口"""
     try:
         from openai import OpenAI
 
@@ -375,7 +415,7 @@ def _call_bianxie_image_generation(
         if not content:
             return None
 
-        # Bianxie 返回 Markdown 格式的图片: ![text](data:image/png;base64,...)
+        # Custom providers should return a data URI image, either directly or inside Markdown.
         pattern = r'data:image/(png|jpeg|jpg|webp);base64,([A-Za-z0-9+/=]+)'
         match = re.search(pattern, content)
 
@@ -386,7 +426,7 @@ def _call_bianxie_image_generation(
 
         return None
     except Exception as e:
-        print(f"[Bianxie] 图像生成 API 调用失败: {e}")
+        print(f"[Custom/OpenAI-compatible] 图像生成 API 调用失败: {e}")
         raise
 
 
@@ -3144,7 +3184,7 @@ def method_to_svg(
     output_dir: str = "./output",
     api_key: str = None,
     base_url: str = None,
-    provider: ProviderType = "bianxie",
+    provider: ProviderType = "custom",
     image_provider: Optional[ImageProviderType] = None,
     image_api_key: Optional[str] = None,
     image_base_url: Optional[str] = None,
@@ -3194,6 +3234,10 @@ def method_to_svg(
     Returns:
         结果字典
     """
+    provider = _normalize_provider_name(provider, warn=True)
+    if image_provider is not None:
+        image_provider = _normalize_provider_name(image_provider, image=True, warn=True)
+
     # 获取默认配置
     config = PROVIDER_CONFIGS[provider]
     if image_provider is None:
@@ -3202,12 +3246,22 @@ def method_to_svg(
 
     if base_url is None:
         base_url = config["base_url"]
+    if provider == "custom" and not base_url:
+        raise ValueError(
+            "Custom provider requires --base_url or AUTOFIGURE_CUSTOM_BASE_URL. "
+            "Use the OpenAI-compatible /v1 root URL, for example https://your-provider.example/v1."
+        )
     if image_base_url is None and provider == "openai_response" and image_provider == "openai":
         image_base_url = base_url
     if image_base_url is None and image_provider == provider and base_url is not None:
         image_base_url = base_url
     if image_base_url is None:
         image_base_url = image_config["base_url"]
+    if input_figure_path is None and image_provider == "custom" and not image_base_url:
+        raise ValueError(
+            "Custom image provider requires --image_base_url, --base_url, or "
+            "AUTOFIGURE_CUSTOM_BASE_URL. Use an OpenAI-compatible /v1 root URL."
+        )
     if image_api_key is None and provider == "openai_response" and image_provider == "openai":
         image_api_key = api_key
     if image_api_key is None and image_provider == "openai":
@@ -3529,25 +3583,31 @@ if __name__ == "__main__":
     # Provider 参数
     parser.add_argument(
         "--provider",
-        choices=["openrouter", "custom", "bianxie", "gemini", "openai_response"],
+        type=_argparse_provider,
+        choices=PUBLIC_PROVIDER_CHOICES,
         default="custom",
-        help="API 提供商（默认: custom）"
+        help="API provider（默认: custom；custom 需要 --base_url 或 AUTOFIGURE_CUSTOM_BASE_URL）"
     )
     parser.add_argument(
         "--image_provider",
-        choices=["openrouter", "custom", "bianxie", "gemini", "openai"],
+        type=_argparse_image_provider,
+        choices=PUBLIC_IMAGE_PROVIDER_CHOICES,
         default=None,
         help="步骤一生图 provider（默认跟随 --provider；若 provider=openai_response 则默认 openai）",
     )
 
     # API 参数
     parser.add_argument("--api_key", default=None, help="API Key")
-    parser.add_argument("--base_url", default=None, help="API base URL（默认根据 provider 自动设置）")
+    parser.add_argument(
+        "--base_url",
+        default=None,
+        help="API base URL；custom 需填写 OpenAI 兼容 /v1 根路径（如 https://your-provider.example/v1）",
+    )
     parser.add_argument("--image_api_key", default=None, help="步骤一生图 API Key（默认跟随 --api_key）")
     parser.add_argument(
         "--image_base_url",
         default=None,
-        help="步骤一生图 API base URL（默认根据 image_provider 自动设置）",
+        help="步骤一生图 API base URL；image_provider=custom 时需填写 OpenAI 兼容 /v1 根路径",
     )
 
     # 模型参数

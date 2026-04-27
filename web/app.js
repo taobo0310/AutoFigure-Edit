@@ -2,7 +2,9 @@
   const INPUT_STATE_KEY = "autofigure_input_state_v2";
   const IMPORT_STATE_KEY = "autofigure_import_state_v1";
   const LOCALE_KEY = "autofigure_locale_v1";
-  const DEFAULT_CUSTOM_BASE_URL = "https://api.bianxie.ai/v1";
+  const DEFAULT_CUSTOM_BASE_URL = "";
+  const CUSTOM_BASE_URL_PLACEHOLDER = "https://your-provider.example/v1";
+  const LEGACY_CUSTOM_BASE_URLS = new Set(["https://api.bianxie.ai/v1"]);
   let currentLocale = loadLocale();
   const localeListeners = [];
   document.documentElement.lang = currentLocale === "zh" ? "zh-CN" : "en";
@@ -60,7 +62,8 @@
         api_key_label: "Primary API Key",
         api_key_hint: "Used by the selected SVG / reasoning provider. Reused for images when possible.",
         base_url_label: "Custom API URL",
-        base_url_hint: "Default keeps the previous Custom endpoint. You can replace it with any compatible OpenAI-style API URL.",
+        base_url_hint: "Required for Custom. Use the OpenAI-compatible /v1 root URL, not a specific endpoint path.",
+        custom_url_required: "Custom API URL required",
         image_api_key_label: "Image Provider API Key",
         image_api_key_placeholder: "Optional override for the image path",
         image_base_url_label: "Image Provider API URL",
@@ -77,6 +80,10 @@
         confirm_btn: "Confirm -> Canvas",
         starting: "Starting...",
         error_method_required: "Please provide method text.",
+        error_custom_base_url_required:
+          "Please fill Custom API URL as an OpenAI-compatible /v1 root URL.",
+        error_custom_image_base_url_required:
+          "Please fill Image Provider API URL for the Custom image route.",
         route_note_openai_linked:
           "Same as SVG path resolves step 1 to OpenAI Images, so one OpenAI-compatible key is usually enough.",
         route_note_override:
@@ -116,7 +123,7 @@
         api_key_hint: "Used only for the SVG / reasoning provider in import mode.",
         base_url_label: "Custom API URL",
         base_url_hint:
-          "Default keeps the previous Custom endpoint. Replace it with any compatible OpenAI-style API URL.",
+          "Required for Custom. Use the OpenAI-compatible /v1 root URL, not a specific endpoint path.",
         sam_backend_label: "SAM3 Backend",
         sam_prompt_label: "SAM Prompt",
         sam_api_key_label: "SAM3 API Key",
@@ -125,6 +132,8 @@
         starting: "Starting...",
         error_upload_required: "Please upload the stage-1 figure first.",
         error_api_key_required: "Please provide the SVG / reasoning API key.",
+        error_custom_base_url_required:
+          "Please fill Custom API URL as an OpenAI-compatible /v1 root URL.",
       },
       guide: {
         brand: "Configuration Guide",
@@ -337,7 +346,8 @@
         api_key_label: "主 API Key",
         api_key_hint: "用于当前 SVG / 推理 provider；在可复用时也会用于图片路线。",
         base_url_label: "自定义 API URL",
-        base_url_hint: "默认保留之前的 Custom 地址。你可以替换为任意兼容 OpenAI 风格的 API URL。",
+        base_url_hint: "Custom 必填。请填写兼容 OpenAI 的 /v1 根路径，不要填具体 endpoint。",
+        custom_url_required: "需要填写自定义 API URL",
         image_api_key_label: "图片路线 API Key",
         image_api_key_placeholder: "图片路线单独覆盖时再填写",
         image_base_url_label: "图片路线 API URL",
@@ -354,6 +364,10 @@
         confirm_btn: "确认并进入画布",
         starting: "正在启动...",
         error_method_required: "请先填写方法文本。",
+        error_custom_base_url_required:
+          "请填写自定义 API URL，格式应为兼容 OpenAI 的 /v1 根路径。",
+        error_custom_image_base_url_required:
+          "请为 Custom 图片路线填写图片路线 API URL。",
         route_note_openai_linked:
           "当与 SVG 路径一致且使用 OpenAI Responses 时，步骤 1 会自动落到 OpenAI Images，所以通常一套 OpenAI 兼容 Key 就够了。",
         route_note_override:
@@ -392,7 +406,7 @@
         api_key_hint: "导入模式下只用于 SVG / 推理 provider。",
         base_url_label: "自定义 API URL",
         base_url_hint:
-          "默认保留之前的 Custom 地址。你可以替换为任意兼容 OpenAI 风格的 API URL。",
+          "Custom 必填。请填写兼容 OpenAI 的 /v1 根路径，不要填具体 endpoint。",
         sam_backend_label: "SAM3 后端",
         sam_prompt_label: "SAM Prompt",
         sam_api_key_label: "SAM3 API Key",
@@ -401,6 +415,8 @@
         starting: "正在启动...",
         error_upload_required: "请先上传第一阶段图片。",
         error_api_key_required: "请先填写 SVG / 推理 API Key。",
+        error_custom_base_url_required:
+          "请填写自定义 API URL，格式应为兼容 OpenAI 的 /v1 根路径。",
       },
       guide: {
         brand: "配置指南",
@@ -664,6 +680,11 @@
     return value === "bianxie" ? "custom" : value;
   }
 
+  function normalizeCustomBaseUrl(value) {
+    const trimmed = typeof value === "string" ? value.trim() : "";
+    return LEGACY_CUSTOM_BASE_URLS.has(trimmed) ? "" : trimmed;
+  }
+
   const page = document.body.dataset.page;
   bindLanguageSwitchers();
   if (page === "input") {
@@ -761,9 +782,9 @@
         imageModel: imageModelInput?.value ?? "",
         svgModel: svgModelInput?.value ?? "",
         apiKey: $("apiKey")?.value ?? "",
-        baseUrl: baseUrlInput?.value ?? DEFAULT_CUSTOM_BASE_URL,
+        baseUrl: normalizeCustomBaseUrl(baseUrlInput?.value ?? DEFAULT_CUSTOM_BASE_URL),
         imageApiKey: imageApiKeyInput?.value ?? "",
-        imageBaseUrl: imageBaseUrlInput?.value ?? DEFAULT_CUSTOM_BASE_URL,
+        imageBaseUrl: normalizeCustomBaseUrl(imageBaseUrlInput?.value ?? DEFAULT_CUSTOM_BASE_URL),
         optimizeIterations: $("optimizeIterations")?.value ?? "0",
         imageSize: imageSizeInput?.value ?? "4K",
         upscaleEnabled: upscaleEnabled?.checked ?? true,
@@ -805,13 +826,13 @@
         $("apiKey").value = state.apiKey;
       }
       if (typeof state.baseUrl === "string" && baseUrlInput) {
-        baseUrlInput.value = state.baseUrl;
+        baseUrlInput.value = normalizeCustomBaseUrl(state.baseUrl);
       }
       if (typeof state.imageApiKey === "string" && imageApiKeyInput) {
         imageApiKeyInput.value = state.imageApiKey;
       }
       if (typeof state.imageBaseUrl === "string" && imageBaseUrlInput) {
-        imageBaseUrlInput.value = state.imageBaseUrl;
+        imageBaseUrlInput.value = normalizeCustomBaseUrl(state.imageBaseUrl);
       }
       if (typeof state.optimizeIterations === "string" && $("optimizeIterations")) {
         $("optimizeIterations").value = state.optimizeIterations;
@@ -907,7 +928,7 @@
     }
 
     function getResolvedPrimaryBaseUrl() {
-      return (baseUrlInput?.value.trim() || DEFAULT_CUSTOM_BASE_URL);
+      return normalizeCustomBaseUrl(baseUrlInput?.value ?? DEFAULT_CUSTOM_BASE_URL);
     }
 
     function getResolvedImageBaseUrl() {
@@ -915,7 +936,7 @@
       if (imageProviderSource === "same") {
         return getResolvedPrimaryBaseUrl();
       }
-      return (imageBaseUrlInput?.value.trim() || getResolvedPrimaryBaseUrl());
+      return normalizeCustomBaseUrl(imageBaseUrlInput?.value ?? "") || getResolvedPrimaryBaseUrl();
     }
 
     function syncModelDefaults() {
@@ -963,10 +984,12 @@
           : "";
       const customSuffix =
         effectiveImageProvider === "custom"
-          ? ` @ ${getResolvedImageBaseUrl()}`
+          ? ` @ ${getResolvedImageBaseUrl() || t("input.custom_url_required")}`
           : "";
       const svgCustomSuffix =
-        provider === "custom" ? ` @ ${getResolvedPrimaryBaseUrl()}` : "";
+        provider === "custom"
+          ? ` @ ${getResolvedPrimaryBaseUrl() || t("input.custom_url_required")}`
+          : "";
 
       if (imageRouteSummary) {
         imageRouteSummary.textContent = `${imageProviderLabel} · ${selectedImageModel}${imageSuffix}${customSuffix}`;
@@ -1014,13 +1037,11 @@
       if (imageBaseUrlGroup) {
         imageBaseUrlGroup.hidden = imageProviderSource !== "custom";
       }
-      if (baseUrlInput && !baseUrlInput.value.trim()) {
-        baseUrlInput.value = DEFAULT_CUSTOM_BASE_URL;
-      }
       if (
         imageProviderSource === "custom" &&
         imageBaseUrlInput &&
-        !imageBaseUrlInput.value.trim()
+        !imageBaseUrlInput.value.trim() &&
+        getResolvedPrimaryBaseUrl()
       ) {
         imageBaseUrlInput.value = getResolvedPrimaryBaseUrl();
       }
@@ -1098,10 +1119,12 @@
       setText("apiKeyLabel", t("input.api_key_label"));
       setText("apiKeyHint", t("input.api_key_hint"));
       setText("baseUrlLabel", t("input.base_url_label"));
+      setPlaceholder("baseUrl", CUSTOM_BASE_URL_PLACEHOLDER);
       setText("baseUrlHint", t("input.base_url_hint"));
       setText("imageApiKeyLabel", t("input.image_api_key_label"));
       setPlaceholder("imageApiKey", t("input.image_api_key_placeholder"));
       setText("imageBaseUrlLabel", t("input.image_base_url_label"));
+      setPlaceholder("imageBaseUrl", CUSTOM_BASE_URL_PLACEHOLDER);
       setText("optimizeLabel", t("input.optimize_label"));
       setText("imageSizeLabel", t("input.image_size_label"));
       setText("upscaleLabel", t("input.upscale_label"));
@@ -1219,11 +1242,20 @@
         return;
       }
 
+      const provider = normalizeProviderValue(providerInput?.value ?? "gemini");
+      const imageProvider = normalizeImageProviderValue(imageProviderInput?.value ?? "same");
+      if (provider === "custom" && !getResolvedPrimaryBaseUrl()) {
+        errorMsg.textContent = t("input.error_custom_base_url_required");
+        return;
+      }
+      if (imageProvider === "custom" && !getResolvedImageBaseUrl()) {
+        errorMsg.textContent = t("input.error_custom_image_base_url_required");
+        return;
+      }
+
       confirmBtn.disabled = true;
       confirmBtn.textContent = t("input.starting");
 
-      const provider = normalizeProviderValue(providerInput?.value ?? "gemini");
-      const imageProvider = normalizeImageProviderValue(imageProviderInput?.value ?? "same");
       const effectiveImageProvider = getEffectiveImageProvider();
       const selectedImageModel =
         imageModelInput?.value.trim() || getDefaultImageModel(effectiveImageProvider);
@@ -1329,7 +1361,7 @@
         provider: normalizeProviderValue(providerInput?.value ?? "gemini"),
         svgModel: svgModelInput?.value ?? "",
         apiKey: apiKeyInput?.value ?? "",
-        baseUrl: baseUrlInput?.value ?? DEFAULT_CUSTOM_BASE_URL,
+        baseUrl: normalizeCustomBaseUrl(baseUrlInput?.value ?? DEFAULT_CUSTOM_BASE_URL),
         samBackend: samBackend?.value ?? "roboflow",
         samPrompt: samPrompt?.value ?? "icon,person,robot,animal",
         samApiKey: samApiKeyInput?.value ?? "",
@@ -1359,7 +1391,7 @@
         apiKeyInput.value = state.apiKey;
       }
       if (typeof state.baseUrl === "string" && baseUrlInput) {
-        baseUrlInput.value = state.baseUrl;
+        baseUrlInput.value = normalizeCustomBaseUrl(state.baseUrl);
       }
       if (typeof state.samBackend === "string" && samBackend) {
         samBackend.value = state.samBackend;
@@ -1420,7 +1452,7 @@
     }
 
     function getResolvedImportBaseUrl() {
-      return baseUrlInput?.value.trim() || DEFAULT_CUSTOM_BASE_URL;
+      return normalizeCustomBaseUrl(baseUrlInput?.value ?? DEFAULT_CUSTOM_BASE_URL);
     }
 
     function syncProviderDefaults() {
@@ -1437,9 +1469,6 @@
       }
       if (baseUrlGroup) {
         baseUrlGroup.hidden = provider !== "custom";
-      }
-      if (baseUrlInput && !baseUrlInput.value.trim()) {
-        baseUrlInput.value = DEFAULT_CUSTOM_BASE_URL;
       }
       saveImportState();
     }
@@ -1490,6 +1519,7 @@
       setText("importApiKeyLabel", t("importPage.api_key_label"));
       setText("importApiKeyHint", t("importPage.api_key_hint"));
       setText("importBaseUrlLabel", t("importPage.base_url_label"));
+      setPlaceholder("importBaseUrl", CUSTOM_BASE_URL_PLACEHOLDER);
       setText("importBaseUrlHint", t("importPage.base_url_hint"));
       setText("importSamBackendLabel", t("importPage.sam_backend_label"));
       setText("importSamPromptLabel", t("importPage.sam_prompt_label"));
@@ -1566,18 +1596,20 @@
         errorMsg.textContent = t("importPage.error_api_key_required");
         return;
       }
+      const provider = normalizeProviderValue(providerInput?.value ?? "gemini");
+      if (provider === "custom" && !getResolvedImportBaseUrl()) {
+        errorMsg.textContent = t("importPage.error_custom_base_url_required");
+        return;
+      }
 
       confirmBtn.disabled = true;
       confirmBtn.textContent = t("importPage.starting");
 
       const payload = {
         input_figure_path: uploadedFigurePath,
-        provider: normalizeProviderValue(providerInput?.value ?? "gemini"),
+        provider,
         api_key: apiKeyInput?.value.trim() || null,
-        base_url:
-          normalizeProviderValue(providerInput?.value ?? "gemini") === "custom"
-            ? getResolvedImportBaseUrl()
-            : null,
+        base_url: provider === "custom" ? getResolvedImportBaseUrl() : null,
         svg_model: svgModelInput?.value.trim() || null,
         sam_backend: samBackend?.value ?? "roboflow",
         sam_prompt: samPrompt?.value.trim() || null,

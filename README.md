@@ -54,7 +54,7 @@ AutoFigure-Edit v1.1 is published as tag `v1.1`. This release focuses on two pra
 
 - **User-supplied stage-1 figure import:** You can now upload an existing academic raster figure, skip step 1 image generation, and continue directly from SAM + SVG reconstruction in both the web UI and CLI workflow.
 - **Official OpenAI model support:** Step 1 can now use the OpenAI Images API with `gpt-image-2`, while the OpenAI Responses path is documented and exposed for text plus multimodal SVG reconstruction with `gpt-5.5` as the default SVG model.
-- **`custom` OpenAI-compatible routing:** The CLI and web UI now expose `custom` as the primary compatible provider name, keep `bianxie` as a backward-compatible alias, and fix the `openai_response` route so step 1 can inherit the same compatible `base_url` and `api_key` by default.
+- **`custom` OpenAI-compatible routing:** The CLI and web UI now expose `custom` as a vendor-neutral compatible provider. Custom routes require an explicit OpenAI-compatible `/v1` base URL, and the `openai_response` route can inherit the same compatible `base_url` and `api_key` by default.
 - **Bilingual setup and onboarding:** The main page, import page, canvas, and guide now support in-page Chinese / English switching, and the built-in guide explains workflow choices, fields, SAM backends, and recommended presets.
 
 Full release notes: [releases/v1.1.md](releases/v1.1.md)
@@ -228,7 +228,7 @@ docker compose down
 - Default SAM prompt: `icon,person,robot,animal`
 - Current default models:
   - `openrouter`: image `google/gemini-3.1-flash-image-preview`, svg `google/gemini-3.1-pro-preview`
-  - `custom` / `bianxie`: image `gemini-3.1-flash-image-preview`, svg `gemini-3.1-pro-preview`
+  - `custom`: image `gemini-3.1-flash-image-preview`, svg `gemini-3.1-pro-preview` (requires your own OpenAI-compatible `/v1` base URL)
   - `gemini`: image `gemini-3.1-flash-image-preview`, svg `gemini-3.1-pro-preview`
   - `openai_response`: image `gpt-image-2` (step 1 fallback), svg `gpt-5.5` via Responses API
 - Optional step-1 override:
@@ -261,6 +261,7 @@ python autofigure2.py \
   --method_file paper.txt \
   --output_dir outputs/demo \
   --provider custom \
+  --base_url https://your-provider.example/v1 \
   --api_key YOUR_KEY
 ```
 
@@ -360,7 +361,8 @@ export FAL_KEY="your-fal-key"
 python autofigure2.py \
   --method_file paper.txt \
   --output_dir outputs/demo \
-  --provider bianxie \
+  --provider custom \
+  --base_url https://your-provider.example/v1 \
   --api_key YOUR_KEY \
   --sam_backend fal
 ```
@@ -372,7 +374,8 @@ export ROBOFLOW_API_KEY="your-roboflow-key"
 python autofigure2.py \
   --method_file paper.txt \
   --output_dir outputs/demo \
-  --provider bianxie \
+  --provider custom \
+  --base_url https://your-provider.example/v1 \
   --api_key YOUR_KEY \
   --sam_backend roboflow
 ```
@@ -388,15 +391,15 @@ Optional CLI flags (API):
 | Provider | Base URL | Notes |
 |----------|----------|------|
 | **OpenRouter** | `openrouter.ai/api/v1` | Supports Gemini/Claude/others |
-| **Custom** | `api.bianxie.ai/v1` (default) | OpenAI-compatible API; `bianxie` remains a backward-compatible alias |
+| **Custom** | `<your-compatible-endpoint>/v1` (required) | Vendor-neutral OpenAI-compatible API |
 | **Gemini (Google)** | `generativelanguage.googleapis.com/v1beta` | Official Google Gemini API (`google-genai`) |
 | **OpenAI Responses** | `api.openai.com/v1` | Uses the official OpenAI Responses API for text + multimodal |
 
 Common CLI flags:
 
 - `--method_text`, `--method_file`, or `--input_figure_path`
-- `--provider` (openrouter | custom | bianxie | gemini | openai_response)
-- `--image_provider` (openrouter | custom | bianxie | gemini | openai, optional step-1 override)
+- `--provider` (openrouter | custom | gemini | openai_response)
+- `--image_provider` (openrouter | custom | gemini | openai, optional step-1 override)
 - `--image_api_key`, `--image_base_url`
 - `--image_model`, `--svg_model`
 - `--image_size` (1K | 2K | 4K, Gemini only)
@@ -414,11 +417,82 @@ Common CLI flags:
 If you want to use a self-hosted or third-party OpenAI-compatible endpoint, use:
 
 - `--provider custom`
-- `--base_url <your_endpoint>`
+- `--base_url <your_openai_compatible_v1_root>`
 - `--image_model <image_model_id>`
 - `--svg_model <svg_model_id>`
 
-This is the same pattern used for custom compatible providers: the system sends standard OpenAI-style requests to your `base_url`. Make sure the endpoint supports both image generation and multimodal SVG reconstruction before running a full job.
+You can also set `AUTOFIGURE_CUSTOM_BASE_URL` instead of passing `--base_url` every time.
+
+`base_url` must be the OpenAI-compatible `/v1` root:
+
+```text
+https://your-provider.example/v1
+```
+
+Do not pass a concrete endpoint path such as:
+
+```text
+https://your-provider.example/v1/chat/completions
+```
+
+For text reasoning and SVG reconstruction, the Custom route calls:
+
+```http
+POST /chat/completions
+Authorization: Bearer <api_key>
+```
+
+Text-only requests use the normal Chat Completions message shape:
+
+```json
+{
+  "model": "your-text-or-svg-model",
+  "messages": [{ "role": "user", "content": "..." }],
+  "max_tokens": 16000,
+  "temperature": 0.7
+}
+```
+
+Multimodal SVG reconstruction must support OpenAI-style `image_url` data URIs:
+
+```json
+{
+  "role": "user",
+  "content": [
+    { "type": "text", "text": "..." },
+    {
+      "type": "image_url",
+      "image_url": { "url": "data:image/png;base64,..." }
+    }
+  ]
+}
+```
+
+The response must return content in the standard shape:
+
+```json
+{
+  "choices": [
+    { "message": { "content": "<svg ...>...</svg>" } }
+  ]
+}
+```
+
+The SVG may be returned as raw `<svg>...</svg>` or inside a markdown code block.
+
+For step-1 image generation with `--image_provider custom` (or when `--provider custom` is linked to step 1), this repo currently calls `/chat/completions` and expects the returned message content to contain a base64 image data URI:
+
+```text
+![image](data:image/png;base64,...)
+```
+
+or:
+
+```text
+data:image/png;base64,...
+```
+
+If your provider only exposes an OpenAI Images-compatible `/images/generations` route, use `--image_provider openai` for the official OpenAI Images API, or keep image generation on another supported route.
 
 ### OpenAI GPT-Image for Step 1
 
