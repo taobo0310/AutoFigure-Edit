@@ -277,6 +277,11 @@
         waiting: "Waiting",
         back_config: "Back to Config",
         back_import: "Back to Import",
+        back_history: "Back to History",
+        history_ready: "Historical result loaded",
+        history_not_found: "History job not found",
+        image_preview_title: "Image preview",
+        image_preview_body: "This historical run does not include a final SVG yet.",
         logs: "Logs",
         job: "Job",
         fallback_title: "SVG-Edit not installed",
@@ -290,8 +295,28 @@
           icon_raw: "Icons extracted",
           icon_nobg: "Icons refined",
           template_svg: "Template SVG ready",
+          optimized_template_svg: "Optimized template ready",
           final_svg: "Final SVG ready",
         },
+      },
+      history: {
+        nav: "History",
+        brand: "History",
+        subtitle: "Saved AutoFigure-Edit outputs.",
+        back_input: "Back to Method Workflow",
+        back_import: "Back to Import Workflow",
+        refresh: "Refresh",
+        summary_title: "Saved Images",
+        count: "{count} items",
+        loading: "Loading...",
+        empty_title: "No history yet",
+        empty_body: "Saved outputs will appear here after a run writes files into outputs/.",
+        open: "Open",
+        complete: "Complete",
+        partial: "Partial",
+        artifacts: "{count} artifacts",
+        updated: "Updated {time}",
+        unknown_time: "Unknown time",
       },
     },
     zh: {
@@ -560,6 +585,11 @@
         waiting: "等待中",
         back_config: "返回配置页",
         back_import: "返回导入页",
+        back_history: "返回历史图片",
+        history_ready: "已加载历史结果",
+        history_not_found: "未找到历史任务",
+        image_preview_title: "图片预览",
+        image_preview_body: "这个历史任务还没有最终 SVG。",
         logs: "日志",
         job: "任务",
         fallback_title: "SVG-Edit 未安装",
@@ -573,8 +603,28 @@
           icon_raw: "图标已裁切",
           icon_nobg: "图标已去背景",
           template_svg: "模板 SVG 已就绪",
+          optimized_template_svg: "优化模板已就绪",
           final_svg: "最终 SVG 已就绪",
         },
+      },
+      history: {
+        nav: "历史图片",
+        brand: "历史图片",
+        subtitle: "已保存的 AutoFigure-Edit 输出。",
+        back_input: "返回文本工作流",
+        back_import: "返回导入工作流",
+        refresh: "刷新",
+        summary_title: "已保存图片",
+        count: "{count} 项",
+        loading: "正在加载...",
+        empty_title: "暂无历史图片",
+        empty_body: "运行结果写入 outputs/ 后，会显示在这里。",
+        open: "打开",
+        complete: "已完成",
+        partial: "未完成",
+        artifacts: "{count} 个素材",
+        updated: "更新于 {time}",
+        unknown_time: "未知时间",
       },
     },
   };
@@ -693,6 +743,8 @@
     initImportPage();
   } else if (page === "guide") {
     initGuidePage();
+  } else if (page === "history") {
+    initHistoryPage();
   } else if (page === "canvas") {
     initCanvasPage();
   }
@@ -1086,6 +1138,7 @@
       setText("inputPageSubtitle", t("input.subtitle"));
       setText("importEntryBtn", t("input.import_entry"));
       setText("inputGuideBtn", t("input.guide_entry"));
+      setText("inputHistoryBtn", t("history.nav"));
       setText("methodTextLabel", t("input.method_label"));
       setPlaceholder("methodText", t("input.method_placeholder"));
       setText("methodHint", t("input.method_hint"));
@@ -1494,6 +1547,7 @@
       setText("importPageSubtitle", t("importPage.subtitle"));
       setText("importBackLink", t("importPage.back"));
       setText("importGuideBtn", t("input.guide_entry"));
+      setText("importHistoryBtn", t("history.nav"));
       setText("importFigureLabel", t("importPage.figure_label"));
       setText("importUploadText", t("importPage.upload_text"));
       setHTML("importFigureHint", t("importPage.figure_hint"));
@@ -1648,6 +1702,7 @@
       setText("guideSubtitle", t("guide.subtitle"));
       setText("guideBackInputBtn", t("guide.back_input"));
       setText("guideBackImportBtn", t("guide.back_import"));
+      setText("guideHistoryBtn", t("history.nav"));
       setText("guideOverviewTitle", t("guide.overview_title"));
       setText("guideOverviewCopy", t("guide.overview_copy"));
       setText("guideMethodKicker", t("guide.method_kicker"));
@@ -1745,6 +1800,139 @@
     onLocaleChange(applyGuideLocale);
   }
 
+  function initHistoryPage() {
+    const grid = $("historyGrid");
+    const empty = $("historyEmpty");
+    const countEl = $("historyCount");
+    const refreshBtn = $("historyRefreshBtn");
+    let historyItems = [];
+    let isLoading = false;
+
+    function applyHistoryLocale() {
+      setText("historyBrandTitle", t("history.brand"));
+      setText("historySubtitle", t("history.subtitle"));
+      setText("historyBackInputBtn", t("history.back_input"));
+      setText("historyBackImportBtn", t("history.back_import"));
+      setText("historyRefreshBtn", isLoading ? t("history.loading") : t("history.refresh"));
+      setText("historySummaryTitle", t("history.summary_title"));
+      setText("historyEmptyTitle", t("history.empty_title"));
+      setText("historyEmptyBody", t("history.empty_body"));
+      renderHistoryItems();
+    }
+
+    async function loadHistory() {
+      if (isLoading) {
+        return;
+      }
+      isLoading = true;
+      if (refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = t("history.loading");
+      }
+      try {
+        const response = await fetch("/api/history");
+        if (!response.ok) {
+          throw new Error("History request failed");
+        }
+        const data = await response.json();
+        historyItems = Array.isArray(data.items) ? data.items : [];
+      } catch (_err) {
+        historyItems = [];
+      } finally {
+        isLoading = false;
+        if (refreshBtn) {
+          refreshBtn.disabled = false;
+          refreshBtn.textContent = t("history.refresh");
+        }
+        renderHistoryItems();
+      }
+    }
+
+    function renderHistoryItems() {
+      if (!grid || !countEl || !empty) {
+        return;
+      }
+      countEl.textContent = t("history.count", { count: historyItems.length });
+      grid.textContent = "";
+      empty.hidden = historyItems.length > 0;
+
+      for (const item of historyItems) {
+        grid.appendChild(createHistoryCard(item));
+      }
+    }
+
+    function createHistoryCard(item) {
+      const card = document.createElement("a");
+      card.className = "history-card";
+      card.href = item.open_url || `/canvas.html?job=${encodeURIComponent(item.job_id)}&source=history`;
+
+      const media = document.createElement("div");
+      media.className = "history-card-media";
+      const img = document.createElement("img");
+      img.src = item.thumbnail_url || "";
+      img.alt = item.job_id || "";
+      img.loading = "lazy";
+      media.appendChild(img);
+
+      const body = document.createElement("div");
+      body.className = "history-card-body";
+
+      const topRow = document.createElement("div");
+      topRow.className = "history-card-top";
+
+      const title = document.createElement("div");
+      title.className = "history-card-title";
+      title.textContent = item.job_id || "unknown";
+
+      const status = document.createElement("div");
+      status.className = `history-status ${item.status === "complete" ? "complete" : "partial"}`;
+      status.textContent = item.status === "complete" ? t("history.complete") : t("history.partial");
+
+      topRow.appendChild(title);
+      topRow.appendChild(status);
+
+      const meta = document.createElement("div");
+      meta.className = "history-card-meta";
+      meta.textContent = t("history.artifacts", { count: item.artifact_count || 0 });
+
+      const updated = document.createElement("div");
+      updated.className = "history-card-updated";
+      updated.textContent = t("history.updated", { time: formatHistoryTime(item.updated_at) });
+
+      const cta = document.createElement("div");
+      cta.className = "history-card-action";
+      cta.textContent = t("history.open");
+
+      body.appendChild(topRow);
+      body.appendChild(meta);
+      body.appendChild(updated);
+      body.appendChild(cta);
+      card.appendChild(media);
+      card.appendChild(body);
+      return card;
+    }
+
+    function formatHistoryTime(value) {
+      if (!value) {
+        return t("history.unknown_time");
+      }
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return t("history.unknown_time");
+      }
+      return new Intl.DateTimeFormat(currentLocale === "zh" ? "zh-CN" : "en-US", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(date);
+    }
+
+    if (refreshBtn) {
+      refreshBtn.addEventListener("click", loadHistory);
+    }
+    onLocaleChange(applyHistoryLocale);
+    loadHistory();
+  }
+
   async function uploadReference(file, confirmBtn, previewEl, statusEl) {
     if (!file.type.startsWith("image/")) {
       statusEl.textContent = t("upload.only_images");
@@ -1810,6 +1998,7 @@
     let currentStep = 0;
     let isFinished = false;
     let statusState = "waiting";
+    let fallbackMode = "editor";
 
     if (!jobId) {
       statusText.textContent = t("canvas.missing_job");
@@ -1820,14 +2009,29 @@
       setText("canvasBrandTitle", t("canvas.brand"));
       setText("canvasStatusLabel", t("canvas.status_label"));
       setText("canvasJobLabel", t("canvas.job"));
-      setText("fallbackTitle", t("canvas.fallback_title"));
-      setHTML("fallbackBody", t("canvas.fallback_body"));
+      setText(
+        "fallbackTitle",
+        fallbackMode === "history_image"
+          ? t("canvas.image_preview_title")
+          : t("canvas.fallback_title")
+      );
+      setHTML(
+        "fallbackBody",
+        fallbackMode === "history_image"
+          ? t("canvas.image_preview_body")
+          : t("canvas.fallback_body")
+      );
       setText("artifactPanelTitle", t("canvas.artifacts"));
       setText("logPanelTitle", t("canvas.logs"));
       setText("logToggle", t("canvas.logs"));
+      setText("canvasHistoryBtn", t("history.nav"));
       if (backToConfigBtn) {
-        backToConfigBtn.textContent =
-          source === "import" ? t("canvas.back_import") : t("canvas.back_config");
+        if (source === "history") {
+          backToConfigBtn.textContent = t("canvas.back_history");
+        } else {
+          backToConfigBtn.textContent =
+            source === "import" ? t("canvas.back_import") : t("canvas.back_config");
+        }
       }
       if (statusState === "waiting") {
         statusText.textContent = t("canvas.waiting");
@@ -1837,6 +2041,8 @@
         statusText.textContent = currentLocale === "zh" ? "连接断开" : "Disconnected";
       } else if (statusState === "done") {
         statusText.textContent = currentLocale === "zh" ? "完成" : "Done";
+      } else if (statusState === "history") {
+        statusText.textContent = t("canvas.history_ready");
       }
     }
 
@@ -1853,7 +2059,11 @@
     });
     if (backToConfigBtn) {
       backToConfigBtn.addEventListener("click", () => {
-        window.location.href = source === "import" ? "/import.html" : "/";
+        if (source === "history") {
+          window.location.href = "/history.html";
+        } else {
+          window.location.href = source === "import" ? "/import.html" : "/";
+        }
       });
     }
 
@@ -1894,20 +2104,27 @@
       icon_raw: { step: 3, labelKey: "canvas.steps.icon_raw" },
       icon_nobg: { step: 3, labelKey: "canvas.steps.icon_nobg" },
       template_svg: { step: 4, labelKey: "canvas.steps.template_svg" },
+      optimized_template_svg: { step: 4, labelKey: "canvas.steps.optimized_template_svg" },
       final_svg: { step: 5, labelKey: "canvas.steps.final_svg" },
     };
 
     const artifacts = new Set();
+    if (source === "history") {
+      await loadHistoricalJob(false);
+      return;
+    }
+
     const eventSource = new EventSource(`/api/events/${jobId}`);
 
     eventSource.addEventListener("artifact", async (event) => {
       const data = JSON.parse(event.data);
-      if (!artifacts.has(data.path)) {
-        artifacts.add(data.path);
-        addArtifactCard(artifactList, data);
-      }
+      rememberArtifact(data);
 
-      if (data.kind === "template_svg" || data.kind === "final_svg") {
+      if (
+        data.kind === "template_svg" ||
+        data.kind === "optimized_template_svg" ||
+        data.kind === "final_svg"
+      ) {
         await loadSvgAsset(data.url);
       }
 
@@ -1940,14 +2157,76 @@
       appendLogLine(logBody, data);
     });
 
-    eventSource.onerror = () => {
+    let historyFallbackAttempted = false;
+    eventSource.onerror = async () => {
       if (isFinished) {
         eventSource.close();
         return;
       }
+      if (!historyFallbackAttempted) {
+        historyFallbackAttempted = true;
+        const loaded = await loadHistoricalJob(true);
+        if (loaded) {
+          eventSource.close();
+          return;
+        }
+      }
       statusState = "disconnected";
       statusText.textContent = currentLocale === "zh" ? "连接断开" : "Disconnected";
     };
+
+    function rememberArtifact(data, prepend = true) {
+      if (!data || !data.path || artifacts.has(data.path)) {
+        return;
+      }
+      artifacts.add(data.path);
+      addArtifactCard(artifactList, data, { prepend });
+    }
+
+    async function loadHistoricalJob(silent) {
+      try {
+        const response = await fetch(`/api/history/${encodeURIComponent(jobId)}`);
+        if (!response.ok) {
+          throw new Error("History job not found");
+        }
+        const item = await response.json();
+        const historicalArtifacts = Array.isArray(item.artifacts) ? item.artifacts : [];
+        for (const artifact of historicalArtifacts) {
+          rememberArtifact(artifact, false);
+        }
+
+        const svgArtifact = findFirstArtifact(historicalArtifacts, [
+          "final_svg",
+          "optimized_template_svg",
+          "template_svg",
+        ]);
+        const imageArtifact = findFirstArtifact(historicalArtifacts, ["figure", "samed"]);
+        if (svgArtifact) {
+          await loadSvgAsset(svgArtifact.url);
+        } else if (imageArtifact) {
+          loadImageAsset(imageArtifact);
+        }
+        statusState = "history";
+        statusText.textContent = t("canvas.history_ready");
+        return true;
+      } catch (_err) {
+        if (!silent) {
+          statusState = "disconnected";
+          statusText.textContent = t("canvas.history_not_found");
+        }
+        return false;
+      }
+    }
+
+    function findFirstArtifact(items, kinds) {
+      for (const kind of kinds) {
+        const found = items.find((item) => item.kind === kind);
+        if (found) {
+          return found;
+        }
+      }
+      return null;
+    }
 
     async function loadSvgAsset(url) {
       let svgText = "";
@@ -1974,6 +2253,14 @@
       } else {
         fallbackObject.data = url;
       }
+    }
+
+    function loadImageAsset(artifact) {
+      fallbackMode = "history_image";
+      iframe.style.display = "none";
+      fallback.classList.add("active");
+      fallbackObject.data = artifact.url;
+      setCanvasLocale();
     }
 
     function tryLoadSvg(svgText) {
@@ -2005,17 +2292,25 @@
     container.scrollTop = container.scrollHeight;
   }
 
-  function addArtifactCard(container, data) {
+  function addArtifactCard(container, data, options = {}) {
+    const prepend = options.prepend !== false;
     const card = document.createElement("a");
     card.className = "artifact-card";
     card.href = data.url;
     card.target = "_blank";
     card.rel = "noreferrer";
 
-    const img = document.createElement("img");
-    img.src = data.url;
-    img.alt = data.name;
-    img.loading = "lazy";
+    let media;
+    if (isPreviewableArtifact(data.kind)) {
+      media = document.createElement("img");
+      media.src = data.url;
+      media.alt = data.name;
+      media.loading = "lazy";
+    } else {
+      media = document.createElement("div");
+      media.className = "artifact-file-icon";
+      media.textContent = data.kind === "log" ? "LOG" : "JSON";
+    }
 
     const meta = document.createElement("div");
     meta.className = "artifact-meta";
@@ -2030,9 +2325,25 @@
 
     meta.appendChild(name);
     meta.appendChild(badge);
-    card.appendChild(img);
+    card.appendChild(media);
     card.appendChild(meta);
-    container.prepend(card);
+    if (prepend) {
+      container.prepend(card);
+    } else {
+      container.appendChild(card);
+    }
+  }
+
+  function isPreviewableArtifact(kind) {
+    return [
+      "figure",
+      "samed",
+      "icon_raw",
+      "icon_nobg",
+      "template_svg",
+      "optimized_template_svg",
+      "final_svg",
+    ].includes(kind);
   }
 
   function formatKind(kind) {
@@ -2047,8 +2358,14 @@
         return currentLocale === "zh" ? "去背景图标" : "icon no-bg";
       case "template_svg":
         return currentLocale === "zh" ? "模板 SVG" : "template";
+      case "optimized_template_svg":
+        return currentLocale === "zh" ? "优化模板" : "optimized";
       case "final_svg":
         return currentLocale === "zh" ? "最终 SVG" : "final";
+      case "boxlib":
+        return currentLocale === "zh" ? "坐标数据" : "box data";
+      case "log":
+        return currentLocale === "zh" ? "日志" : "log";
       default:
         return currentLocale === "zh" ? "素材" : "artifact";
     }

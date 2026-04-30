@@ -335,6 +335,7 @@ If you already have the first-stage raster figure, use the black button in the t
 The generation result loads directly into an integrated [SVG-Edit](https://github.com/SVG-Edit/svgedit) canvas, allowing for full vector editing.
 *   **Status & Logs:** Check real-time progress (top-left) and view detailed execution logs (top-right button).
 *   **Artifacts Drawer:** Click the floating button (bottom-right) to expand the **Artifacts Panel**. This contains all intermediate outputs (icons, SVG templates, etc.). You can **drag and drop** any artifact directly onto the canvas for custom composition.
+*   **History:** Open the **History** button to browse saved runs from `outputs/` and reopen an older result in the canvas.
 
 ---
 
@@ -541,6 +542,7 @@ AutoFigure-edit/
 ├── web/                   # Static frontend
 │   ├── index.html
 │   ├── canvas.html
+│   ├── history.html
 │   ├── styles.css
 │   ├── app.js
 │   └── vendor/svg-edit/   # Embedded SVG editor

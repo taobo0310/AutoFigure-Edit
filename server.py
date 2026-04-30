@@ -112,6 +112,29 @@ app = FastAPI()
 
 JOBS: dict[str, Job] = {}
 LEGACY_PROVIDER_ALIASES = {"bianxie": "custom"}
+HISTORY_ARTIFACT_ORDER = [
+    "figure.png",
+    "samed.png",
+    "template.svg",
+    "optimized_template.svg",
+    "final.svg",
+    "boxlib.json",
+    "run.log",
+]
+HISTORY_THUMBNAIL_KINDS = {
+    "figure",
+    "samed",
+    "final_svg",
+    "template_svg",
+    "optimized_template_svg",
+}
+HISTORY_PRIMARY_KINDS = [
+    "final_svg",
+    "optimized_template_svg",
+    "template_svg",
+    "figure",
+    "samed",
+]
 
 
 def _normalize_provider(value: Optional[str]) -> Optional[str]:
@@ -129,6 +152,35 @@ def healthz() -> JSONResponse:
 def get_config() -> JSONResponse:
     available, rel_path = _resolve_svg_edit_path()
     return JSONResponse({"svgEditAvailable": available, "svgEditPath": rel_path})
+
+
+@app.get("/api/history")
+def list_history(limit: int = 200) -> JSONResponse:
+    items = []
+    if OUTPUTS_DIR.is_dir():
+        output_dirs = [path for path in OUTPUTS_DIR.iterdir() if path.is_dir()]
+        output_dirs.sort(key=_history_sort_key, reverse=True)
+        for output_dir in output_dirs[: max(1, min(limit, 1000))]:
+            item = _build_history_item(output_dir.name)
+            if item:
+                items.append(item)
+    return JSONResponse({"items": items, "count": len(items)})
+
+
+@app.get("/api/history/{job_id}")
+def get_history_job(job_id: str) -> JSONResponse:
+    item = _build_history_item(job_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="History job not found")
+    return JSONResponse(item)
+
+
+@app.get("/api/history/{job_id}/artifacts/{path:path}")
+def get_history_artifact(job_id: str, path: str) -> FileResponse:
+    output_dir = _resolve_output_dir(job_id)
+    if not output_dir:
+        raise HTTPException(status_code=404, detail="History job not found")
+    return _artifact_file_response(output_dir, path)
 
 
 @app.post("/api/run")
@@ -292,15 +344,10 @@ def stream_events(job_id: str) -> StreamingResponse:
 @app.get("/api/artifacts/{job_id}/{path:path}")
 def get_artifact(job_id: str, path: str) -> FileResponse:
     job = JOBS.get(job_id)
-    if not job:
+    output_dir = job.output_dir if job else _resolve_output_dir(job_id)
+    if not output_dir:
         raise HTTPException(status_code=404, detail="Job not found")
-
-    candidate = (job.output_dir / path).resolve()
-    if not str(candidate).startswith(str(job.output_dir.resolve())):
-        raise HTTPException(status_code=400, detail="Invalid path")
-    if not candidate.is_file():
-        raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(candidate)
+    return _artifact_file_response(output_dir, path)
 
 
 @app.get("/api/uploads/{filename}")
@@ -316,6 +363,125 @@ def get_upload(filename: str) -> FileResponse:
 def _format_sse(event: str, data: dict) -> str:
     payload = json.dumps(data, ensure_ascii=True)
     return f"event: {event}\ndata: {payload}\n\n"
+
+
+def _resolve_output_dir(job_id: str) -> Path | None:
+    if not job_id or "/" in job_id or "\\" in job_id:
+        return None
+    candidate = (OUTPUTS_DIR / job_id).resolve()
+    try:
+        candidate.relative_to(OUTPUTS_DIR.resolve())
+    except ValueError:
+        return None
+    return candidate if candidate.is_dir() else None
+
+
+def _artifact_file_response(output_dir: Path, path: str) -> FileResponse:
+    candidate = (output_dir / path).resolve()
+    try:
+        candidate.relative_to(output_dir.resolve())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    if not candidate.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(candidate)
+
+
+def _history_sort_key(output_dir: Path) -> float:
+    try:
+        return max(
+            (path.stat().st_mtime for path in output_dir.rglob("*") if path.is_file()),
+            default=output_dir.stat().st_mtime,
+        )
+    except OSError:
+        return 0.0
+
+
+def _history_timestamp_from_job_id(job_id: str) -> datetime | None:
+    try:
+        return datetime.strptime(job_id[:15], "%Y%m%d_%H%M%S")
+    except ValueError:
+        return None
+
+
+def _iso_from_timestamp(timestamp: float) -> str:
+    return datetime.fromtimestamp(timestamp).isoformat(timespec="seconds")
+
+
+def _build_history_item(job_id: str) -> dict | None:
+    output_dir = _resolve_output_dir(job_id)
+    if not output_dir:
+        return None
+
+    artifacts = _collect_artifacts(job_id, output_dir)
+    if not artifacts:
+        return None
+
+    latest_mtime = _history_sort_key(output_dir)
+    parsed_created_at = _history_timestamp_from_job_id(job_id)
+    created_at = (
+        parsed_created_at.isoformat(timespec="seconds")
+        if parsed_created_at
+        else _iso_from_timestamp(latest_mtime)
+    )
+
+    by_kind = {artifact["kind"]: artifact for artifact in artifacts}
+    thumbnail = next(
+        (artifact for artifact in artifacts if artifact["kind"] in HISTORY_THUMBNAIL_KINDS),
+        artifacts[0],
+    )
+    primary = next(
+        (by_kind[kind] for kind in HISTORY_PRIMARY_KINDS if kind in by_kind),
+        thumbnail,
+    )
+    status = "complete" if "final_svg" in by_kind else "partial"
+
+    return {
+        "job_id": job_id,
+        "created_at": created_at,
+        "updated_at": _iso_from_timestamp(latest_mtime),
+        "status": status,
+        "artifact_count": len(artifacts),
+        "thumbnail_url": thumbnail["url"],
+        "thumbnail_kind": thumbnail["kind"],
+        "primary_artifact": primary,
+        "open_url": f"/canvas.html?job={job_id}&source=history",
+        "artifacts": artifacts,
+    }
+
+
+def _collect_artifacts(job_id: str, output_dir: Path) -> list[dict]:
+    candidates: list[Path] = []
+    for name in HISTORY_ARTIFACT_ORDER:
+        candidates.append(output_dir / name)
+
+    icons_dir = output_dir / "icons"
+    if icons_dir.is_dir():
+        candidates.extend(sorted(icons_dir.glob("icon_*.png")))
+
+    seen: set[str] = set()
+    artifacts: list[dict] = []
+    for path in candidates:
+        if not path.is_file():
+            continue
+        rel_path = path.relative_to(output_dir).as_posix()
+        if rel_path in seen:
+            continue
+        seen.add(rel_path)
+        artifacts.append(_artifact_payload(job_id, path, rel_path))
+    return artifacts
+
+
+def _artifact_payload(job_id: str, path: Path, rel_path: str) -> dict:
+    stat = path.stat()
+    return {
+        "kind": _classify_artifact(rel_path),
+        "name": path.name,
+        "path": rel_path,
+        "url": f"/api/artifacts/{job_id}/{rel_path}",
+        "updated_at": _iso_from_timestamp(stat.st_mtime),
+        "size": stat.st_size,
+    }
 
 
 def _monitor_job(job: Job) -> None:
@@ -375,6 +541,7 @@ def _scan_artifacts(job: Job) -> None:
         output_dir / "figure.png",
         output_dir / "samed.png",
         output_dir / "template.svg",
+        output_dir / "optimized_template.svg",
         output_dir / "final.svg",
     ]
 
@@ -390,16 +557,7 @@ def _scan_artifacts(job: Job) -> None:
             continue
         job.seen.add(rel_path)
 
-        kind = _classify_artifact(rel_path)
-        job.push(
-            "artifact",
-            {
-                "kind": kind,
-                "name": path.name,
-                "path": rel_path,
-                "url": f"/api/artifacts/{job.job_id}/{rel_path}",
-            },
-        )
+        job.push("artifact", _artifact_payload(job.job_id, path, rel_path))
 
 
 def _classify_artifact(rel_path: str) -> str:
@@ -413,8 +571,14 @@ def _classify_artifact(rel_path: str) -> str:
         return "icon_raw"
     if rel_path == "template.svg":
         return "template_svg"
+    if rel_path == "optimized_template.svg":
+        return "optimized_template_svg"
     if rel_path == "final.svg":
         return "final_svg"
+    if rel_path == "boxlib.json":
+        return "boxlib"
+    if rel_path == "run.log":
+        return "log"
     return "artifact"
 
 
