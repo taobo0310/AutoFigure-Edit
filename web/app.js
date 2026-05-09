@@ -2,9 +2,10 @@
   const INPUT_STATE_KEY = "autofigure_input_state_v2";
   const IMPORT_STATE_KEY = "autofigure_import_state_v1";
   const LOCALE_KEY = "autofigure_locale_v1";
+  const BIANXIE_BASE_URL = "https://api.bianxie.ai/v1";
   const DEFAULT_CUSTOM_BASE_URL = "";
   const CUSTOM_BASE_URL_PLACEHOLDER = "https://your-provider.example/v1";
-  const LEGACY_CUSTOM_BASE_URLS = new Set(["https://api.bianxie.ai/v1"]);
+  const LEGACY_CUSTOM_BASE_URLS = new Set([BIANXIE_BASE_URL]);
   let currentLocale = loadLocale();
   const localeListeners = [];
   document.documentElement.lang = currentLocale === "zh" ? "zh-CN" : "en";
@@ -13,6 +14,7 @@
     en: {
       providers: {
         gemini: "Gemini",
+        bianxie: "Bianxie AI",
         openai_response: "OpenAI Responses",
         openrouter: "OpenRouter",
         custom: "Custom",
@@ -47,6 +49,7 @@
         route_step4: "Step 4 SVG",
         provider_label: "SVG / Reasoning Provider",
         provider_caption: "Controls text reasoning and SVG reconstruction.",
+        provider_bianxie_meta: "GPT-image-2 and Gemini route for mainland China users",
         provider_gemini_meta: "Google multimodal route",
         provider_openai_meta: "Use the Responses API format",
         provider_openrouter_meta: "OpenAI-compatible relay",
@@ -160,7 +163,7 @@
           "SVG / Reasoning Provider: Gemini. Step 1 Image Provider: OpenAI Images. Image Model: gpt-image-2. Use this if you prefer Gemini SVG reconstruction but OpenAI image generation.",
         preset3_title: "Preset 3: Custom Relay",
         preset3_copy:
-          "Choose Custom and fill Custom API URL when you use an OpenAI-compatible relay or your own gateway. Keep the default Custom endpoint if it already works for you.",
+          "Choose Bianxie AI for the built-in aggregate route, or choose Custom and fill Custom API URL when you use your own OpenAI-compatible relay.",
         pipeline_steps_title: "What the Pipeline Actually Does",
         step1_kicker: "Step 1",
         step1_title: "Generate or Import figure.png",
@@ -322,6 +325,7 @@
     zh: {
       providers: {
         gemini: "Gemini",
+        bianxie: "便携AI",
         openai_response: "OpenAI Responses",
         openrouter: "OpenRouter",
         custom: "自定义",
@@ -356,6 +360,7 @@
         route_step4: "步骤 4 SVG",
         provider_label: "SVG / 推理 Provider",
         provider_caption: "控制文本推理和 SVG 重建。",
+        provider_bianxie_meta: "支持中国大陆使用 GPT-image-2 和 Gemini 的聚合路线",
         provider_gemini_meta: "Google 多模态路线",
         provider_openai_meta: "使用 Responses API 格式",
         provider_openrouter_meta: "兼容 OpenAI 的中继路线",
@@ -468,7 +473,7 @@
           "SVG / 推理 Provider 选 Gemini，步骤 1 图片 Provider 改成 OpenAI Images，Image Model 用 gpt-image-2。适合你想保留 Gemini 的 SVG 重建，但生图想走 OpenAI。",
         preset3_title: "方案 3：自定义中转 / 网关",
         preset3_copy:
-          "当你使用 OpenAI 兼容的中转或私有网关时，选择 Custom，并填写对应的 Custom API URL。若默认地址正好可用，也可以直接保留。",
+          "内置聚合路线可选择便携AI；如果你使用自己的 OpenAI 兼容中转或私有网关，则选择 Custom 并填写对应的 Custom API URL。",
         pipeline_steps_title: "完整流程 1 到 5 步在做什么",
         step1_kicker: "步骤 1",
         step1_title: "生成或导入 figure.png",
@@ -723,11 +728,11 @@
   }
 
   function normalizeProviderValue(value) {
-    return value === "bianxie" ? "custom" : value;
+    return value;
   }
 
   function normalizeImageProviderValue(value) {
-    return value === "bianxie" ? "custom" : value;
+    return value;
   }
 
   function normalizeCustomBaseUrl(value) {
@@ -796,6 +801,9 @@
       if (normalized === "openrouter") {
         return t("providers.openrouter");
       }
+      if (normalized === "bianxie") {
+        return t("providers.bianxie");
+      }
       if (normalized === "gemini") {
         return t("providers.gemini");
       }
@@ -829,7 +837,7 @@
     function saveInputState() {
       const state = {
         methodText: $("methodText")?.value ?? "",
-        provider: normalizeProviderValue(providerInput?.value ?? "gemini"),
+        provider: normalizeProviderValue(providerInput?.value ?? "bianxie"),
         imageProvider: normalizeImageProviderValue(imageProviderInput?.value ?? "same"),
         imageModel: imageModelInput?.value ?? "",
         svgModel: svgModelInput?.value ?? "",
@@ -951,7 +959,7 @@
     }
 
     function getEffectiveImageProvider() {
-      const provider = normalizeProviderValue(providerInput?.value ?? "gemini");
+      const provider = normalizeProviderValue(providerInput?.value ?? "bianxie");
       const override = normalizeImageProviderValue(imageProviderInput?.value ?? "same");
       if (override !== "same") {
         return override;
@@ -973,6 +981,9 @@
       if (provider === "openai") {
         return "gpt-image-2";
       }
+      if (provider === "bianxie") {
+        return "gpt-image-2";
+      }
       if (provider === "openrouter") {
         return "google/gemini-3.1-flash-image-preview";
       }
@@ -992,7 +1003,7 @@
     }
 
     function syncModelDefaults() {
-      const provider = normalizeProviderValue(providerInput?.value ?? "gemini");
+      const provider = normalizeProviderValue(providerInput?.value ?? "bianxie");
       const effectiveImageProvider = getEffectiveImageProvider();
 
       if (svgModelInput) {
@@ -1019,7 +1030,7 @@
     }
 
     function updateRouteSummary() {
-      const provider = normalizeProviderValue(providerInput?.value ?? "gemini");
+      const provider = normalizeProviderValue(providerInput?.value ?? "bianxie");
       const effectiveImageProvider = getEffectiveImageProvider();
       const imageProviderSource = normalizeImageProviderValue(imageProviderInput?.value ?? "same");
       const selectedImageModel = imageModelInput?.value.trim() || getDefaultImageModel(effectiveImageProvider);
@@ -1065,7 +1076,7 @@
     }
 
     function syncRoutingControls() {
-      const provider = normalizeProviderValue(providerInput?.value ?? "gemini");
+      const provider = normalizeProviderValue(providerInput?.value ?? "bianxie");
       const imageProviderSource = normalizeImageProviderValue(imageProviderInput?.value ?? "same");
       const effectiveImageProvider = getEffectiveImageProvider();
 
@@ -1148,6 +1159,8 @@
       setText("routeStep4Label", t("input.route_step4"));
       setText("providerLabel", t("input.provider_label"));
       setText("providerCaption", t("input.provider_caption"));
+      setText("providerBianxieTitle", t("providers.bianxie"));
+      setText("providerBianxieMeta", t("input.provider_bianxie_meta"));
       setText("providerGeminiTitle", t("providers.gemini"));
       setText("providerGeminiMeta", t("input.provider_gemini_meta"));
       setText("providerOpenAIResponsesTitle", t("providers.openai_response"));
@@ -1163,6 +1176,7 @@
       setText("imageProviderCaption", t("input.image_provider_caption"));
       setText("imageProviderSameLabel", t("providers.same_as_svg"));
       setText("imageProviderOpenAILabel", t("providers.openai_images"));
+      setText("imageProviderBianxieLabel", t("providers.bianxie"));
       setText("imageProviderGeminiLabel", t("providers.gemini"));
       setText("imageProviderOpenRouterLabel", t("providers.openrouter"));
       setText("imageProviderCustomLabel", t("providers.custom"));
@@ -1295,7 +1309,7 @@
         return;
       }
 
-      const provider = normalizeProviderValue(providerInput?.value ?? "gemini");
+      const provider = normalizeProviderValue(providerInput?.value ?? "bianxie");
       const imageProvider = normalizeImageProviderValue(imageProviderInput?.value ?? "same");
       if (provider === "custom" && !getResolvedPrimaryBaseUrl()) {
         errorMsg.textContent = t("input.error_custom_base_url_required");
@@ -1390,6 +1404,9 @@
       if (normalized === "openrouter") {
         return t("providers.openrouter");
       }
+      if (normalized === "bianxie") {
+        return t("providers.bianxie");
+      }
       if (normalized === "gemini") {
         return t("providers.gemini");
       }
@@ -1411,7 +1428,7 @@
 
     function saveImportState() {
       const state = {
-        provider: normalizeProviderValue(providerInput?.value ?? "gemini"),
+        provider: normalizeProviderValue(providerInput?.value ?? "bianxie"),
         svgModel: svgModelInput?.value ?? "",
         apiKey: apiKeyInput?.value ?? "",
         baseUrl: normalizeCustomBaseUrl(baseUrlInput?.value ?? DEFAULT_CUSTOM_BASE_URL),
@@ -1509,7 +1526,7 @@
     }
 
     function syncProviderDefaults() {
-      const provider = normalizeProviderValue(providerInput?.value ?? "gemini");
+      const provider = normalizeProviderValue(providerInput?.value ?? "bianxie");
       const nextDefault = getDefaultSvgModel(provider);
       const previousDefault = svgModelInput?.dataset.suggestedDefault || "";
       const currentValue = svgModelInput?.value.trim() || "";
@@ -1560,6 +1577,8 @@
       setText("importRouteNote", t("importPage.route_note"));
       setText("importProviderLabel", t("importPage.provider_label"));
       setText("importProviderCaption", t("importPage.provider_caption"));
+      setText("importProviderBianxieTitle", t("providers.bianxie"));
+      setText("importProviderBianxieMeta", t("input.provider_bianxie_meta"));
       setText("importProviderGeminiTitle", t("providers.gemini"));
       setText("importProviderGeminiMeta", t("input.provider_gemini_meta"));
       setText("importProviderOpenAIResponsesTitle", t("providers.openai_response"));
@@ -1650,7 +1669,7 @@
         errorMsg.textContent = t("importPage.error_api_key_required");
         return;
       }
-      const provider = normalizeProviderValue(providerInput?.value ?? "gemini");
+      const provider = normalizeProviderValue(providerInput?.value ?? "bianxie");
       if (provider === "custom" && !getResolvedImportBaseUrl()) {
         errorMsg.textContent = t("importPage.error_custom_base_url_required");
         return;

@@ -78,8 +78,12 @@
               <label class="field-label" id="importProviderLabel" for="importProvider">SVG / Reasoning Provider</label>
               <div class="field-caption" id="importProviderCaption">Controls multimodal SVG reconstruction.</div>
             </div>
-            <input id="importProvider" type="hidden" value="gemini" />
+            <input id="importProvider" type="hidden" value="bianxie" />
             <div id="importProviderButtons" class="choice-grid">
+              <button type="button" class="choice-card" data-value="bianxie">
+                <span class="choice-title" id="importProviderBianxieTitle">Bianxie AI</span>
+                <span class="choice-meta" id="importProviderBianxieMeta">Mainland China-friendly OpenAI-compatible route</span>
+              </button>
               <button type="button" class="choice-card" data-value="gemini">
                 <span class="choice-title" id="importProviderGeminiTitle">Gemini</span>
                 <span class="choice-meta" id="importProviderGeminiMeta">Google multimodal route</span>

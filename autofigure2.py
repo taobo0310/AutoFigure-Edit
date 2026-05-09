@@ -3,6 +3,7 @@ Paper Method 到 SVG 图标替换完整流程 (Label 模式增强版 + Box合并
 
 支持的 API Provider：
 - openrouter: OpenRouter API (https://openrouter.ai/api/v1)
+- bianxie: 便携AI聚合 API (https://api.bianxie.ai/v1)
 - custom: OpenAI 兼容 API（需要提供 --base_url 或 AUTOFIGURE_CUSTOM_BASE_URL）
 - gemini: Google Gemini 官方 API (https://ai.google.dev/)
 - openai: OpenAI Images API（仅步骤一生图 override）
@@ -39,7 +40,10 @@ Box合并功能 (--merge_threshold):
 5. 根据序号匹配，将透明图标替换到 SVG 占位符中 -> final.svg
 
 使用方法：
-    # 使用自定义 OpenAI 兼容接口 + label 模式
+    # 使用便携AI聚合 API + label 模式（默认 provider）
+    python iou_autofigure.py --method_file paper_method.txt --output_dir ./output --provider bianxie --api_key "your-key"
+
+    # 使用自定义 OpenAI 兼容接口
     python iou_autofigure.py --method_file paper_method.txt --output_dir ./output --provider custom --base_url "https://your-provider.example/v1" --api_key "your-key"
 
     # 使用 OpenRouter
@@ -93,9 +97,10 @@ from transformers import AutoModelForImageSegmentation
 # Provider 配置
 # ============================================================================
 
-PUBLIC_PROVIDER_CHOICES = ("openrouter", "custom", "gemini", "openai_response")
-PUBLIC_IMAGE_PROVIDER_CHOICES = ("openrouter", "custom", "gemini", "openai")
-LEGACY_PROVIDER_ALIASES = {"bianxie": "custom"}
+BIANXIE_BASE_URL = "https://api.bianxie.ai/v1"
+
+PUBLIC_PROVIDER_CHOICES = ("openrouter", "bianxie", "custom", "gemini", "openai_response")
+PUBLIC_IMAGE_PROVIDER_CHOICES = ("openrouter", "bianxie", "custom", "gemini", "openai")
 
 
 def _custom_base_url_default() -> Optional[str]:
@@ -104,16 +109,6 @@ def _custom_base_url_default() -> Optional[str]:
 
 
 def _normalize_provider_name(value: str, *, image: bool = False, warn: bool = False) -> str:
-    if value in LEGACY_PROVIDER_ALIASES:
-        normalized = LEGACY_PROVIDER_ALIASES[value]
-        if warn:
-            print(
-                f"[compat] provider `{value}` is deprecated; using `{normalized}`. "
-                "Set --provider custom and --base_url explicitly.",
-                file=sys.stderr,
-            )
-        return normalized
-
     choices = PUBLIC_IMAGE_PROVIDER_CHOICES if image else PUBLIC_PROVIDER_CHOICES
     if value not in choices:
         expected = " | ".join(choices)
@@ -141,6 +136,11 @@ PROVIDER_CONFIGS = {
         "default_image_model": "google/gemini-3.1-flash-image-preview",
         "default_svg_model": "google/gemini-3.1-pro-preview",
     },
+    "bianxie": {
+        "base_url": BIANXIE_BASE_URL,
+        "default_image_model": "gpt-image-2",
+        "default_svg_model": "gemini-3.1-pro-preview",
+    },
     "custom": {
         "base_url": _custom_base_url_default(),
         "default_image_model": "gemini-3.1-flash-image-preview",
@@ -166,8 +166,8 @@ IMAGE_PROVIDER_CONFIGS = {
     },
 }
 
-ProviderType = Literal["openrouter", "custom", "gemini", "openai_response"]
-ImageProviderType = Literal["openrouter", "custom", "gemini", "openai"]
+ProviderType = Literal["openrouter", "bianxie", "custom", "gemini", "openai_response"]
+ImageProviderType = Literal["openrouter", "bianxie", "custom", "gemini", "openai"]
 PlaceholderMode = Literal["none", "box", "label"]
 GEMINI_DEFAULT_IMAGE_SIZE = "4K"
 IMAGE_SIZE_CHOICES = ("1K", "2K", "4K")
@@ -219,7 +219,7 @@ def call_llm_text(
         LLM 响应文本
     """
     provider = _normalize_provider_name(provider)
-    if provider == "custom":
+    if provider in ("bianxie", "custom"):
         return _call_openai_compatible_text(prompt, api_key, model, base_url, max_tokens, temperature)
     if provider == "gemini":
         return _call_gemini_text(prompt, api_key, model, max_tokens, temperature)
@@ -253,7 +253,7 @@ def call_llm_multimodal(
         LLM 响应文本
     """
     provider = _normalize_provider_name(provider)
-    if provider == "custom":
+    if provider in ("bianxie", "custom"):
         return _call_openai_compatible_multimodal(contents, api_key, model, base_url, max_tokens, temperature)
     if provider == "gemini":
         return _call_gemini_multimodal(contents, api_key, model, max_tokens, temperature)
@@ -289,6 +289,15 @@ def call_llm_image_generation(
     provider = _normalize_provider_name(provider, image=True)
     if provider == "custom":
         return _call_openai_compatible_image_generation(prompt, api_key, model, base_url, reference_image)
+    if provider == "bianxie":
+        return _call_openai_image_generation(
+            prompt=prompt,
+            api_key=api_key,
+            model=model,
+            base_url=base_url,
+            reference_image=reference_image,
+            image_size=image_size,
+        )
     if provider == "gemini":
         return _call_gemini_image_generation(
             prompt=prompt,
@@ -1330,7 +1339,7 @@ def generate_figure_from_method(
 
     if provider == "gemini":
         print(f"分辨率: {image_size}")
-    elif provider == "openai":
+    elif provider in ("bianxie", "openai"):
         print(f"图像尺寸: {_resolve_openai_image_size(image_size, reference_image)}")
 
     if use_reference_image:
@@ -3184,7 +3193,7 @@ def method_to_svg(
     output_dir: str = "./output",
     api_key: str = None,
     base_url: str = None,
-    provider: ProviderType = "custom",
+    provider: ProviderType = "bianxie",
     image_provider: Optional[ImageProviderType] = None,
     image_api_key: Optional[str] = None,
     image_base_url: Optional[str] = None,
@@ -3309,7 +3318,7 @@ def method_to_svg(
     if not input_figure_path:
         if image_provider == "gemini":
             print(f"生图分辨率: {image_size}")
-        elif image_provider == "openai":
+        elif image_provider in ("bianxie", "openai"):
             print(f"生图尺寸: {_resolve_openai_image_size(image_size)}")
     print("=" * 60)
 
@@ -3585,8 +3594,8 @@ if __name__ == "__main__":
         "--provider",
         type=_argparse_provider,
         choices=PUBLIC_PROVIDER_CHOICES,
-        default="custom",
-        help="API provider（默认: custom；custom 需要 --base_url 或 AUTOFIGURE_CUSTOM_BASE_URL）"
+        default="bianxie",
+        help="API provider（默认: bianxie；custom 需要 --base_url 或 AUTOFIGURE_CUSTOM_BASE_URL）"
     )
     parser.add_argument(
         "--image_provider",

@@ -40,7 +40,7 @@ https://github.com/user-attachments/assets/6f93deb4-9854-4f1e-8097-53b0c3378a0d
 
 ## 🔥 News
 
-- **[2026.04.23]** 🚀 **AutoFigure-Edit v1.1** is now available. This release primarily adds user-supplied stage-1 figure import, official OpenAI model support including `gpt-image-2` and `gpt-5.5`, `custom` OpenAI-compatible routing, and a bilingual configuration workflow. See the full [release notes](releases/v1.1.md).
+- **[2026.04.23]** 🚀 **AutoFigure-Edit v1.1** is now available. This release primarily adds user-supplied stage-1 figure import, official OpenAI model support including `gpt-image-2` and `gpt-5.5`, Bianxie AI / `custom` OpenAI-compatible routing, and a bilingual configuration workflow. See the full [release notes](releases/v1.1.md).
 - **[2026.03.24]** 🧠 Our sister project **DeepScientist v1.5** is now officially released. It is a local-first open-source autonomous research system for end-to-end scientific discovery. Explore it on [GitHub](https://github.com/ResearAI/DeepScientist) or read the [ICLR 2026 paper](https://openreview.net/forum?id=cZFgsLq8Gs).
 - **[2026.03.11]** 📄 Our **AutoFigure-Edit** paper is now available on [arXiv](https://arxiv.org/abs/2603.06674) and featured in 🤗[Hugging Face Daily Papers](https://huggingface.co/papers/2603.06674)! If you find our work helpful, please consider giving us an **upvote** on Hugging Face and **citing** our paper. Thank you! ❤️
 - **[2026.02.17]** 🚀 The **AutoFigure-Edit online platform** is now live! It is free for all scholars to use. Try it out at [deepscientist.cc](https://deepscientist.cc).
@@ -54,7 +54,7 @@ AutoFigure-Edit v1.1 is published as tag `v1.1`. This release focuses on two pra
 
 - **User-supplied stage-1 figure import:** You can now upload an existing academic raster figure, skip step 1 image generation, and continue directly from SAM + SVG reconstruction in both the web UI and CLI workflow.
 - **Official OpenAI model support:** Step 1 can now use the OpenAI Images API with `gpt-image-2`, while the OpenAI Responses path is documented and exposed for text plus multimodal SVG reconstruction with `gpt-5.5` as the default SVG model.
-- **`custom` OpenAI-compatible routing:** The CLI and web UI now expose `custom` as a vendor-neutral compatible provider. Custom routes require an explicit OpenAI-compatible `/v1` base URL, and the `openai_response` route can inherit the same compatible `base_url` and `api_key` by default.
+- **Bianxie AI and `custom` OpenAI-compatible routing:** The CLI and web UI expose `bianxie` as a built-in compatible route with `https://api.bianxie.ai/v1`, while `custom` remains available for user-supplied OpenAI-compatible `/v1` base URLs. The `openai_response` route can inherit the same compatible `base_url` and `api_key` by default.
 - **Bilingual setup and onboarding:** The main page, import page, canvas, and guide now support in-page Chinese / English switching, and the built-in guide explains workflow choices, fields, SAM backends, and recommended presets.
 
 Full release notes: [releases/v1.1.md](releases/v1.1.md)
@@ -228,6 +228,7 @@ docker compose down
 - Default SAM prompt: `icon,person,robot,animal`
 - Current default models:
   - `openrouter`: image `google/gemini-3.1-flash-image-preview`, svg `google/gemini-3.1-pro-preview`
+  - `bianxie`: image `gpt-image-2`, svg `gemini-3.1-pro-preview` (built-in base URL `https://api.bianxie.ai/v1`)
   - `custom`: image `gemini-3.1-flash-image-preview`, svg `gemini-3.1-pro-preview` (requires your own OpenAI-compatible `/v1` base URL)
   - `gemini`: image `gemini-3.1-flash-image-preview`, svg `gemini-3.1-pro-preview`
   - `openai_response`: image `gpt-image-2` (step 1 fallback), svg `gpt-5.5` via Responses API
@@ -260,8 +261,7 @@ pip install -e .
 python autofigure2.py \
   --method_file paper.txt \
   --output_dir outputs/demo \
-  --provider custom \
-  --base_url https://your-provider.example/v1 \
+  --provider bianxie \
   --api_key YOUR_KEY
 ```
 
@@ -317,7 +317,7 @@ AutoFigure-edit provides a visual web interface designed for seamless generation
 <img src="img/demo_start.png" width="100%" alt="Configuration Page" style="border: 1px solid #ddd; border-radius: 8px; margin-bottom: 10px;"/>
 
 On the start page, paste your paper's method text on the left. On the right, configure your generation settings:
-*   **Provider:** Select your LLM provider (OpenRouter, Custom, Gemini, or OpenAI Responses).
+*   **Provider:** Select your LLM provider (Bianxie AI, OpenRouter, Custom, Gemini, or OpenAI Responses).
 *   **Image Provider:** Optionally override **step 1 only** to use OpenAI GPT-Image.
 *   **Optimize:** Set SVG template refinement iterations (recommend `0` for standard use).
 *   **Image Size:** Available when the effective step-1 image provider is **Gemini**. Choose `1K`, `2K`, or `4K`.
@@ -362,8 +362,7 @@ export FAL_KEY="your-fal-key"
 python autofigure2.py \
   --method_file paper.txt \
   --output_dir outputs/demo \
-  --provider custom \
-  --base_url https://your-provider.example/v1 \
+  --provider bianxie \
   --api_key YOUR_KEY \
   --sam_backend fal
 ```
@@ -375,8 +374,7 @@ export ROBOFLOW_API_KEY="your-roboflow-key"
 python autofigure2.py \
   --method_file paper.txt \
   --output_dir outputs/demo \
-  --provider custom \
-  --base_url https://your-provider.example/v1 \
+  --provider bianxie \
   --api_key YOUR_KEY \
   --sam_backend roboflow
 ```
@@ -392,6 +390,7 @@ Optional CLI flags (API):
 | Provider | Base URL | Notes |
 |----------|----------|------|
 | **OpenRouter** | `openrouter.ai/api/v1` | Supports Gemini/Claude/others |
+| **Bianxie AI** | `api.bianxie.ai/v1` | Built-in OpenAI-compatible aggregate API; supports GPT-image-2 and Gemini-3.1-Pro access for mainland China users without a foreign credit card |
 | **Custom** | `<your-compatible-endpoint>/v1` (required) | Vendor-neutral OpenAI-compatible API |
 | **Gemini (Google)** | `generativelanguage.googleapis.com/v1beta` | Official Google Gemini API (`google-genai`) |
 | **OpenAI Responses** | `api.openai.com/v1` | Uses the official OpenAI Responses API for text + multimodal |
@@ -399,8 +398,8 @@ Optional CLI flags (API):
 Common CLI flags:
 
 - `--method_text`, `--method_file`, or `--input_figure_path`
-- `--provider` (openrouter | custom | gemini | openai_response)
-- `--image_provider` (openrouter | custom | gemini | openai, optional step-1 override)
+- `--provider` (openrouter | bianxie | custom | gemini | openai_response)
+- `--image_provider` (openrouter | bianxie | custom | gemini | openai, optional step-1 override)
 - `--image_api_key`, `--image_base_url`
 - `--image_model`, `--svg_model`
 - `--image_size` (1K | 2K | 4K, Gemini only)
@@ -480,6 +479,8 @@ The response must return content in the standard shape:
 ```
 
 The SVG may be returned as raw `<svg>...</svg>` or inside a markdown code block.
+
+The built-in `bianxie` route uses the same OpenAI-compatible chat shape for text/SVG reconstruction, and uses an OpenAI Images-compatible path for `gpt-image-2` step-1 image generation.
 
 For step-1 image generation with `--image_provider custom` (or when `--provider custom` is linked to step 1), this repo currently calls `/chat/completions` and expects the returned message content to contain a base64 image data URI:
 
@@ -606,6 +607,12 @@ Repository metadata and usage guidance:
 ## 🙏 Acknowledgments
 
 We would like to thank the [Linux.do](https://linux.do/) community for their support.
+
+We also thank the following sponsor for supporting this project:
+
+| Sponsor | Link | Support | Note |
+|---|---|---|---|
+| Bianxie AI Aggregate API | [https://api.bianxie.ai](https://bianxieai.com/autofigure) | Provides mainland China-friendly access to GPT-image-2 and Gemini-3.1-Pro for AutoFigure-Edit users | No foreign credit card required |
 
 This project is licensed under the MIT License - see `LICENSE` for details.
 Name and logo usage are covered separately in `TRADEMARK.md`.

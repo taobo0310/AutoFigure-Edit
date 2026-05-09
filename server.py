@@ -87,7 +87,7 @@ class Job:
 
 class RunRequest(BaseModel):
     method_text: Optional[str] = None
-    provider: str = "custom"
+    provider: str = "bianxie"
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     image_provider: Optional[str] = None
@@ -111,7 +111,6 @@ class RunRequest(BaseModel):
 app = FastAPI()
 
 JOBS: dict[str, Job] = {}
-LEGACY_PROVIDER_ALIASES = {"bianxie": "custom"}
 HISTORY_ARTIFACT_ORDER = [
     "figure.png",
     "samed.png",
@@ -135,12 +134,6 @@ HISTORY_PRIMARY_KINDS = [
     "figure",
     "samed",
 ]
-
-
-def _normalize_provider(value: Optional[str]) -> Optional[str]:
-    if value is None:
-        return None
-    return LEGACY_PROVIDER_ALIASES.get(value, value)
 
 
 @app.get("/healthz")
@@ -203,7 +196,7 @@ def run_job(req: RunRequest) -> JSONResponse:
         "--output_dir",
         str(output_dir),
         "--provider",
-        _normalize_provider(req.provider) or "custom",
+        req.provider or "bianxie",
     ]
     if method_text:
         cmd += ["--method_text", method_text]
@@ -220,7 +213,7 @@ def run_job(req: RunRequest) -> JSONResponse:
     if req.base_url:
         cmd += ["--base_url", req.base_url]
     if req.image_provider:
-        cmd += ["--image_provider", _normalize_provider(req.image_provider) or req.image_provider]
+        cmd += ["--image_provider", req.image_provider]
     if req.image_api_key:
         cmd += ["--image_api_key", req.image_api_key]
     if req.image_base_url:
